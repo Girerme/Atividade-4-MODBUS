@@ -1,14 +1,11 @@
 from pymodbus.client import ModbusTcpClient
-from pymodbus.payload import BinaryPayloadBuilder, BinaryPayloadDecoder
-from pymodbus.constants import Endian
+import struct
 
 class ClienteMODBUS:
     """Classe Cliente MODBUS exclusiva para comunicação e conversão de dados."""
     
     def __init__(self, server_ip, porta):
         self._cliente = ModbusTcpClient(host=server_ip, port=porta)
-        self.byte_order = Endian.BIG
-        self.word_order = Endian.BIG
 
     def conectar(self):
         return self._cliente.connect()
@@ -18,33 +15,31 @@ class ClienteMODBUS:
 
     def ler_holding_register(self, addr):
         """Lê um Holding Register inteiro (16 bits)."""
-        resp = self._cliente.read_holding_registers(address=addr, count=1, slave=1)
+        resp = self._cliente.read_holding_registers(address=addr, count=1, device_id=1)
         if resp and not resp.isError():
             return resp.registers[0]
         return None
 
     def escreve_holding_register(self, addr, valor):
         """Escreve um valor inteiro em um Holding Register."""
-        resp = self._cliente.write_register(address=addr, value=int(valor), slave=1)
+        resp = self._cliente.write_register(address=addr, value=int(valor), device_id=1)
         return bool(resp and not resp.isError())
 
     def ler_float(self, addr):
-        """Lê um valor float32 em dois Holding Registers consecutivos."""
-        resp = self._cliente.read_holding_registers(address=addr, count=2, slave=1)
+        """Lê um valor float32 em dois Holding Registers consecutivos usando Big Endian."""
+        resp = self._cliente.read_holding_registers(address=addr, count=2, device_id=1)
         if resp and not resp.isError():
-            decoder = BinaryPayloadDecoder.fromRegisters(
-                resp.registers, byteorder=self.byte_order, wordorder=self.word_order
-            )
-            return decoder.decode_32bit_float()
+            regs = resp.registers
+            raw_bytes = struct.pack('>HH', regs[0], regs[1])
+            return struct.unpack('>f', raw_bytes)[0]
         return None
 
     def escreve_float(self, addr, valor):
-        """Escreve um valor float32 ocupando dois Holding Registers consecutivos."""
-        builder = BinaryPayloadBuilder(byteorder=self.byte_order, wordorder=self.word_order)
-        builder.add_32bit_float(float(valor))
-        payload = builder.to_registers()
+        """Escreve um valor float32 ocupando dois Holding Registers consecutivos (Big Endian)."""
+        raw_bytes = struct.pack('>f', float(valor))
+        reg1, reg2 = struct.unpack('>HH', raw_bytes)
         
-        resp = self._cliente.write_registers(address=addr, values=payload, slave=1)
+        resp = self._cliente.write_registers(address=addr, values=[reg1, reg2], device_id=1)
         return bool(resp and not resp.isError())
 
     def ler_bits_registrador(self, addr):
